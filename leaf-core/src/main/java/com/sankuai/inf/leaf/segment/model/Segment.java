@@ -3,6 +3,8 @@ package com.sankuai.inf.leaf.segment.model;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Segment {
+
+    //当前值
     private AtomicLong value = new AtomicLong(0);
     private volatile long max;
     private volatile int step;

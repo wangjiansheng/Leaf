@@ -50,6 +50,7 @@ public class SnowflakeZookeeperHolder {
         try {
             CuratorFramework curator = createWithOptions(connectionString, new RetryUntilElapsed(1000, 4), 10000, 6000);
             curator.start();
+            //查询路径是否存在
             Stat stat = curator.checkExists().forPath(PATH_FOREVER);
             if (stat == null) {
                 //不存在根节点,机器第一次启动,创建/snowflake/ip:port-000000000,并上传数据
@@ -88,6 +89,7 @@ public class SnowflakeZookeeperHolder {
                     String[] nodeKey = newNode.split("-");
                     workerID = Integer.parseInt(nodeKey[1]);
                     doService(curator);
+                    //在节点文件系统上缓存一个workid值,zk失效,机器重启时保证能够正常启动
                     updateLocalWorkerID(workerID);
                     LOGGER.info("[New NODE]can not find node on forever node that endpoint ip-{} port-{} workid-{},create own node on forever node and start SUCCESS ", ip, port, workerID);
                 }
@@ -123,6 +125,7 @@ public class SnowflakeZookeeperHolder {
             @Override
             public void run() {
                 updateNewData(curator, zk_AddressNode);
+                LOGGER.info("3s定时上报本机时间给forever节点");
             }
         }, 1L, 3L, TimeUnit.SECONDS);//每3s上报数据
 

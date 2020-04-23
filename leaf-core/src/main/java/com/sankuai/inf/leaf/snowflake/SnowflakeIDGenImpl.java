@@ -19,12 +19,12 @@ public class SnowflakeIDGenImpl implements IDGen {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SnowflakeIDGenImpl.class);
 
-    private final long twepoch;
+    private final long twepoch;//起始的时间戳  默认2010年11月4日星期四09:42:54 GMT+0800
     private final long workerIdBits = 10L;
     private final long maxWorkerId = ~(-1L << workerIdBits);//最大能够分配的workerid =1023
     private final long sequenceBits = 12L;
     private final long workerIdShift = sequenceBits;
-    private final long timestampLeftShift = sequenceBits + workerIdBits;
+    private final long timestampLeftShift = sequenceBits + workerIdBits;//左移位数
     private final long sequenceMask = ~(-1L << sequenceBits);
     private long workerId;
     private long sequence = 0L;
@@ -32,7 +32,7 @@ public class SnowflakeIDGenImpl implements IDGen {
     private static final Random RANDOM = new Random();
 
     public SnowflakeIDGenImpl(String zkAddress, int port) {
-        //Thu Nov 04 2010 09:42:54 GMT+0800 (中国标准时间) 
+        //Thu Nov 04 2010 09:42:54 GMT+0800 (中国标准时间)  2010年11月4日星期四09:42:54 GMT+0800
         this(zkAddress, port, 1288834974657L);
     }
 
@@ -43,7 +43,7 @@ public class SnowflakeIDGenImpl implements IDGen {
      */
     public SnowflakeIDGenImpl(String zkAddress, int port, long twepoch) {
         this.twepoch = twepoch;
-        Preconditions.checkArgument(timeGen() > twepoch, "Snowflake not support twepoch gt currentTime");
+        Preconditions.checkArgument(timeGen() > twepoch, "Snowflake not support twepoch gt currentTime");  //起始的时间戳必须小于当前时间
         final String ip = Utils.getIp();
         SnowflakeZookeeperHolder holder = new SnowflakeZookeeperHolder(ip, String.valueOf(port), zkAddress);
         LOGGER.info("twepoch:{} ,ip:{} ,zkAddress:{} port:{}", twepoch, ip, zkAddress, port);
@@ -60,12 +60,14 @@ public class SnowflakeIDGenImpl implements IDGen {
     @Override
     public synchronized Result get(String key) {
         long timestamp = timeGen();
+        //发生了回拨，此刻时间小于上次发号时间
         if (timestamp < lastTimestamp) {
             long offset = lastTimestamp - timestamp;
             if (offset <= 5) {
-                try {
+                try {//时间偏差大小小于5ms，则等待两倍时间
                     wait(offset << 1);
                     timestamp = timeGen();
+                    //还是小于，抛异常并上报
                     if (timestamp < lastTimestamp) {
                         return new Result(-1, Status.EXCEPTION);
                     }
@@ -88,6 +90,7 @@ public class SnowflakeIDGenImpl implements IDGen {
             //如果是新的ms开始
             sequence = RANDOM.nextInt(100);
         }
+        //本地保存最后时间戳
         lastTimestamp = timestamp;
         long id = ((timestamp - twepoch) << timestampLeftShift) | (workerId << workerIdShift) | sequence;
         return new Result(id, Status.SUCCESS);

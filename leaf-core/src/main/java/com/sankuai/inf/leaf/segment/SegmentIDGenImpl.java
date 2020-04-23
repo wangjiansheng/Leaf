@@ -62,6 +62,7 @@ public class SegmentIDGenImpl implements IDGen {
         // 确保加载到kv后才初始化成功
         updateCacheFromDb();
         initOK = true;
+        //里面线程池每隔60s刷新数据库有哪些tag
         updateCacheFromDbAtEveryMinute();
         return initOK;
     }
@@ -138,11 +139,12 @@ public class SegmentIDGenImpl implements IDGen {
         if (cache.containsKey(key)) {
             SegmentBuffer buffer = cache.get(key);
             if (!buffer.isInitOk()) {
+                //buffer 未初始化
                 synchronized (buffer) {
                     if (!buffer.isInitOk()) {
                         try {
                             updateSegmentFromDb(key, buffer.getCurrent());
-                            logger.info("Init buffer. Update leafkey {} {} from db", key, buffer.getCurrent());
+                            logger.info("Init buffer. Update leafkey {} {} from db", key, buffer.getCurrent());//设置buffer状态
                             buffer.setInitOk(true);
                         } catch (Exception e) {
                             logger.warn("Init buffer {} exception", buffer.getCurrent(), e);
@@ -169,6 +171,7 @@ public class SegmentIDGenImpl implements IDGen {
             buffer.setStep(leafAlloc.getStep());
             buffer.setMinStep(leafAlloc.getStep());//leafAlloc中的step为DB中的step
         } else {
+            //持续的时间
             long duration = System.currentTimeMillis() - buffer.getUpdateTimestamp();
             int nextStep = buffer.getStep();
             if (duration < SEGMENT_DURATION) {
@@ -200,11 +203,16 @@ public class SegmentIDGenImpl implements IDGen {
     }
 
     public Result getIdFromSegmentBuffer(final SegmentBuffer buffer) {
+        //循环  buffer队列处于交换的时候第二次才能取到值
         while (true) {
             buffer.rLock().lock();
             try {
                 final Segment segment = buffer.getCurrent();
-                if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep()) && buffer.getThreadRunning().compareAndSet(false, true)) {
+                //设置下个buffer的值
+                //下一个segment是否处于可切换状态    还剩多少个可以读     0.9*步长
+                if (!buffer.isNextReady() && (segment.getIdle() < 0.9 * segment.getStep
+                                                        //线程设置为true
+                        ()) && buffer.getThreadRunning().compareAndSet(false, true)) {
                     service.execute(new Runnable() {
                         @Override
                         public void run() {
@@ -229,13 +237,16 @@ public class SegmentIDGenImpl implements IDGen {
                         }
                     });
                 }
+                //获取值
                 long value = segment.getValue().getAndIncrement();
+                //当前值小于最大值    如果大于说明这个segment过期了，就用下一个segment。
                 if (value < segment.getMax()) {
                     return new Result(value, Status.SUCCESS);
                 }
             } finally {
                 buffer.rLock().unlock();
             }
+            //等待上面线程池执行完
             waitAndSleep(buffer);
             buffer.wLock().lock();
             try {
@@ -245,6 +256,7 @@ public class SegmentIDGenImpl implements IDGen {
                     return new Result(value, Status.SUCCESS);
                 }
                 if (buffer.isNextReady()) {
+                    //segment队列交换   下标交换
                     buffer.switchPos();
                     buffer.setNextReady(false);
                 } else {
