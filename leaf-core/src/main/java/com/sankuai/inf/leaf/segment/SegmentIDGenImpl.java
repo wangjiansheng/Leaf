@@ -271,11 +271,12 @@ public class SegmentIDGenImpl implements IDGen {
 
     private void waitAndSleep(SegmentBuffer buffer) {
         int roll = 0;
+        //buffer.getThreadRunning().get()  ==true说明上面的线程池在运行
         while (buffer.getThreadRunning().get()) {
             roll += 1;
             if(roll > 10000) {
                 try {
-                    TimeUnit.MILLISECONDS.sleep(10);
+                    TimeUnit.MILLISECONDS.sleep(100);
                     break;
                 } catch (InterruptedException e) {
                     logger.warn("Thread {} Interrupted",Thread.currentThread().getName());
